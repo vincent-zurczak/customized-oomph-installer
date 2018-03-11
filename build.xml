@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns:unless="ant:unless" xmlns:if="ant:if">
+
+	<!-- Create custom installers for several platforms -->
+	<target name="make.them.all" description="Download installers from Eclipse.org and configure them">
+		
+		<!-- Dirty hack to use the internal proxy when downloading the installers -->
+		<setproxy proxyhost="${org.proxy.host}" proxyport="${org.proxy.port}" if:set="org.proxy.host" />
+
+		<!-- Deal with the different targets -->
+		<antcall target="make.it.all"><param name="file" value="eclipse-inst-linux64.tar.gz" /></antcall>
+		<antcall target="make.it.all"><param name="file" value="eclipse-inst-win64.exe" /></antcall>
+		<antcall target="make.it.all"><param name="file" value="eclipse-inst-win32.exe" /></antcall>
+	</target>
+
+
+	<!-- Deal with a given installer -->
+	<target name="make.it.all" description="Download an installer from Eclipse.org and configure it">
+		<condition property="is.tar.gz">
+			<matches pattern=".*\.tar\.gz$" string="${file}" />
+		</condition>
+
+		<echo message="Processing a tar.gz archive..." if:true="${is.tar.gz}" />
+		<echo message="Processing a self-extractible (.exe SFX) archive..." unless:true="${is.tar.gz}" />
+
+		<antcall target="update.cache">
+				<param name="file" value="${file}" />
+				<param name="is.tar.gz" value="${is.tar.gz}" />
+		</antcall>
+
+		<antcall target="update.archive">
+				<param name="file" value="${file}" />
+			<param name="is.tar.gz" value="${is.tar.gz}" />
+		</antcall>
+	</target>
+
+
+	<!-- Update the cache for a given target -->
+	<target name="update.cache" description="Download from Eclipse.org">
+		
+		<!-- Because "mvn clean" is too easily used, the cache is not put inside the "target" directory. -->
+		<mkdir dir="cache" />
+		
+		<!-- Eclipse does not maintain a repository with older versions of OOMPH. -->
+		<!-- Assumption: the last one is always the best. -->
+		<get src="http://www.eclipse.org/downloads/download.php?file=/oomph/products/${file}&amp;r=1" dest="cache/${file}" skipexisting="true" />
+
+		<!-- Check the file. -->
+		<!-- Unlike the installer itself, we always download the signature from Eclipse.org. -->
+		<!-- This way, we can easily determine whether our cache is up-to-date. -->
+		<get src="http://www.eclipse.org/downloads/sums.php?file=%2Foomph%2Fproducts%2F${file}&amp;type=sha512" dest="cache/${file}.sha-512"  />
+
+		<!-- 
+			Checksum can directly compute a checksum from the file and compare it with the downloaded version.
+			However, it is better to write the computed value and compare it with the other one next.
+
+			In case of error, it is easier to see the difference and compare it with the SHA-12 displayed on
+			Eclipse's web site. It sometimes happen that Eclipse signatures are not updated when they release
+			a new version of OOMPH. In such situations, a bug should be raised.
+			Example: https://bugs.eclipse.org/bugs/show_bug.cgi?id=526451
+			
+			Displaying the computed cheksum might also help in case where Eclipse would modify the format
+			(aka "pattern property") in the checksum (which is currently: "checksum  file-name"). 
+		-->
+		<checksum file="cache/${file}" algorithm="SHA-512" fileext=".sha-512.ant" pattern="{0}  {1}" forceoverwrite="yes" />
+		<condition property="checksum.matches">
+			<filesmatch file1="cache/${file}.sha-512" file2="cache/${file}.sha-512.ant" textfile="true" />
+		</condition>
+
+		<fail unless="${checksum.matches}">
+			Invalid checksum control in ${file}. Cache may not be up-to-date.
+			Please, delete cache/${file} and execute your Maven command once again.
+		</fail>
+
+		<!-- If no error, clean the directory and notify the successful operation -->
+		<delete file="cache/${file}.sha-512.ant" />
+		<delete file="cache/${file}.sha-512" />
+		<echo>Checksum control was successful for ${file}.</echo>
+	</target>
+
+
+	<!-- Update the downloaded installer -->
+	<target name="update.archive" description="Extraction, mise à jour et réarchivage de l'installateur">
+		
+		<!-- Delete a potential previous work-directory -->
+		<delete dir="target/eclipse-installer/" failonerror="false" />
+		<mkdir dir="target/eclipse-installer/" />
+		
+		<!-- Extraction (in the "target" directory - do not alter the cache itself). -->
+		<!-- The target directory is always called "eclipse-installer". -->
+		<!-- We use a different strategy depending on the target platform. -->
+		<untar src="cache/${file}" dest="target/" compression="gzip" if:true="${is.tar.gz}" />
+		
+		<!-- For .exe files, convert them into ZIP files and extract them -->
+		<antcall target="extract.windows.installer" unless:true="${is.tar.gz}" />
+		
+		<!-- Create network preferences (proxy stuff) -->
+		<mkdir dir="target/eclipse-installer/configuration/.settings" />
+		<echo message="Update network settings..." />
+		<echo append="false" file="target/eclipse-installer/configuration/.settings/org.eclipse.core.net.prefs" if:set="org.proxy.host">eclipse.preferences.version=1
+nonProxiedHosts=*.my-organization|localhost|127.0.0.1
+org.eclipse.core.net.hasMigrated=true
+proxyData/HTTP/hasAuth=false
+proxyData/HTTP/host=${org.proxy.host}
+proxyData/HTTP/port=${org.proxy.port}
+systemProxiesEnabled=false
+		</echo>
+		
+		<!-- Update the .ini file -->
+		<!-- Useful to load a custom catalog, define specific locations, etc. -->
+		<echo message="Updating the eclipse-inst.ini file..." />
+		<echo append="true" file="target/eclipse-installer/eclipse-inst.ini">-Declipse.p2.mirrors=false
+-Declipse.p2.unsignedPolicy=allow
+-Doomph.setup.stats.skip=true
+-Doomph.setup.installer.mode=ADVANCED
+-Doomph.setup.questionnaire.skip=true
+-Dorg.eclipse.ecf.provider.filetransfer.httpclient4.browse.connectTimeout=240000
+-Dorg.eclipse.ecf.provider.filetransfer.httpclient4.retrieve.connectTimeout=240000
+-Dorg.eclipse.ecf.provider.filetransfer.httpclient4.retrieve.readTimeout=240000
+-Dorg.eclipse.equinox.p2.transport.ecf.retry=5
+-Doomph.redirection.emf.setup=http://replaced.by/value/from/eclipse.ini->${plugins.location}
+-Doomph.update.url=${oomph.update.location}
+-Dour.plugins.url=${plugins.location}
+-Doomph.redirection.setups=index:/->${setups.location}
+		</echo>
+		
+		<!-- 
+			Create an archive from the modified installer.
+			Use a different strategy depending on the target platform:
+			[*] .tar.gz for Linux
+			[*] .zip for Windows (.exe are not necessary)
+		-->
+		<delete file="target/${file}" />
+		<tar destfile="target/${file}" compression="gzip" longfile="warn" if:true="${is.tar.gz}">
+			<tarfileset dir="target/eclipse-installer" excludes="eclipse-inst" />
+			<tarfileset dir="target/eclipse-installer" includes="eclipse-inst" filemode="775" />
+		</tar>
+
+		<zip destfile="target/${file}" basedir="target/eclipse-installer" unless:true="${is.tar.gz}" />
+		<move todir="target" unless:true="${is.tar.gz}">
+		      <fileset dir="target" />
+		      <mapper type="glob" from="*.exe" to="*.zip" />
+		</move>
+
+		<!-- Delete the work directory -->
+		<delete dir="target/eclipse-installer/" />
+	</target>
+	
+	
+	<!-- 
+		Extract (SFX) archives for Windows.
+		See http://wiki.eclipse.org/Eclipse_Oomph_Authoring#How_to_extract_the_constituent_parts_that_comprise_the_Windows_self-extracting_installer_executable
+		(could be done in pure Java).
+	-->
+	<target name="extract.windows.installer" description="Extracting SFX archive (.exe) for Windows">
+		<java classname="org.eclipse.oomph.extractor.lib.BINExtractor">
+			<classpath>
+				<pathelement path="${java.class.path}" />
+				<pathelement location="lib/org.eclipse.oomph.extractor.lib_1.3.0.v20161116-0647.jar" />
+			</classpath>
+			
+			<arg value="cache/${file}" />
+			<arg value="target/eclipse-installer.zip" />
+			<arg value="-export" />
+			<arg value="target/marker.txt" /> 
+			<arg value="target/extractor.exe" />
+			<arg value="target/org.eclipse.oomph.extractor.lib.jar" />
+			<arg value="target/product-descriptor" />
+		</java>
+		
+		<delete file="target/marker.txt" />
+		<delete file="target/extractor.exe" />
+		<delete file="target/org.eclipse.oomph.extractor.lib.jar" />
+		<delete file="target/product-descriptor" />
+		
+		<unzip src="target/eclipse-installer.zip" dest="target/eclipse-installer" />
+		<delete file="target/eclipse-installer/extractor.exe" />
+		<delete file="target/eclipse-installer.zip" />
+	</target>
+
+</project>

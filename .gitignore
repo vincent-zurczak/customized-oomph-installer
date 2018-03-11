@@ -1,0 +1,16 @@
+# Usual stuff
+/workspace
+bin/
+target/
+state/
+*.local.launch
+Copy of *.launch
+*~
+~*.docx
+~*.pptx
+com.chronon.sb.browser.launcher.prefs
+Corel Auto-Preserve/
+.DS_Store
+
+# Do not commit the "cache" directory (must remain local)
+cache/

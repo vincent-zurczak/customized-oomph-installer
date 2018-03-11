@@ -1,0 +1,91 @@
+<project
+		xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd" 
+		xmlns="http://maven.apache.org/POM/4.0.0" 
+		xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+	<modelVersion>4.0.0</modelVersion>
+	
+	<groupId>net.vzurczak.eclipse</groupId>
+	<artifactId>cutomized-oomph-installer</artifactId>
+	<version>1.0.0-SNAPSHOT</version>
+	<packaging>pom</packaging>
+	<name>Custom OOMPH Installer</name>
+
+	<properties>
+	
+		<!-- General properties -->
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+		<!-- Properties that can be put / overwritten in a profile -->
+		<oomph.update.location>http://download.eclipse.org/releases/oxygen</oomph.update.location>
+		<setups.location>http://my.internal.server/setups/</setups.location>
+		<plugins.location>http://my.internal.server/update-site/latest/</plugins.location>
+		<org.proxy.host>proxy.my-organization</org.proxy.host>
+		<org.proxy.port>3128</org.proxy.port>
+	
+	</properties>
+
+	<build>
+		<plugins>
+		
+			<!-- We use ANT -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-antrun-plugin</artifactId>
+				<version>1.8</version>
+				<executions>
+					<execution>
+						<phase>generate-sources</phase>
+						<configuration>
+							<target>
+								<ant antfile="${basedir}/build.xml" target="make.them.all" />
+							</target>
+						</configuration>
+						<goals>
+							<goal>run</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+			
+			<!-- Attach the produced installers as Maven artifacts -->
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>build-helper-maven-plugin</artifactId>
+				<version>3.0.0</version>
+				<configuration>
+					<artifacts>
+						
+						<artifact>
+							<file>${project.build.directory}/eclipse-inst-linux64.tar.gz</file>
+							<classifier>linux64</classifier>
+							<type>tar.gz</type>
+						</artifact>
+						
+						<artifact>
+							<file>${project.build.directory}/eclipse-inst-win64.zip</file>
+							<classifier>win64</classifier>
+							<type>zip</type>
+						</artifact>
+						
+						<artifact>
+							<file>${project.build.directory}/eclipse-inst-win32.zip</file>
+							<classifier>win32</classifier>
+							<type>zip</type>
+						</artifact>
+						
+					</artifacts>
+				</configuration>
+				<executions>
+					<execution>
+						<goals>
+							<goal>attach-artifact</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+		</plugins>
+	</build>
+	
+</project>
