@@ -34,7 +34,7 @@ For the record...
 * **oomph.update.location**: the location of the p2 repository to download Eclipse packages.  
 By default, this is the official Eclipse repository. But one could target mirrors.
 
-* **plugins.location**: the location of the p2 repository than contains custom OOMPH extensions developed by the organization.  
+* **plugins.location**: the location of the p2 repository than contains custom OOMPH extensions developed by the organization. 
 This property is optional.
 
 * **setups.location**: the location of the custom OOMPH catalog.  
